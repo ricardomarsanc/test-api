@@ -1,84 +1,125 @@
+require('dotenv').config()
+// DB connection - Auto execute
+require('./mongo')
+
+const notFound = require('./middleware/notFound.js')
+const handleErrors = require('./middleware/handleError.js')
+
+const Sentry = require('@sentry/node')
+const Tracing = require('@sentry/tracing')
+
 const express = require('express')
+const app = express()
+
 const cors = require('cors')
+
+const Note = require('./models/Note')
 
 const logger = require('./loggerMiddleware')
 
-const app = express()
-
 app.use(cors())
 app.use(express.json())
+app.use(express.static('images'))
+
+Sentry.init({
+  dsn: process.env.SENTRY_URI,
+  integrations: [
+    // enable HTTP calls tracing
+    new Sentry.Integrations.Http({ tracing: true }),
+    // enable Express.js middleware tracing
+    new Tracing.Integrations.Express({ app })
+  ]
+})
+
+// RequestHandler creates a separate execution context using domains, so that every
+// transaction/span/breadcrumb is attached to its own Hub instance
+app.use(Sentry.Handlers.requestHandler())
+// TracingHandler creates a trace for every incoming request
+app.use(Sentry.Handlers.tracingHandler())
 
 app.use(logger)
 
-let notes = [
-  {
-    id: 1,
-    content: 'Estudia por favor',
-    date: '2022-05-30T18:39:34.091Z',
-    important: false
-  },
-  {
-    id: 2,
-    content: 'Estudia por favor 2',
-    date: '2022-09-20T10:39:34.091Z',
-    important: false
-  },
-  {
-    id: 3,
-    content: 'Estudia por favor 3',
-    date: '2022-07-30T07:30:34.091Z',
-    important: true
-  }
-]
-
-app.get('/', (request, response) => {
+app.get('/', (_request, response) => {
   response.send('<h1>Hello World</h1>')
 })
 
-app.get('/api/notes', (request, response) => {
-  response.json(notes)
+app.get('/api/notes', (_request, response) => {
+  Note.find({}).then(notes => {
+    response.json(notes)
+  })
 })
 
-app.get('/api/notes/:id', (request, response) => {
-  const id = Number(request.params.id)
-  const note = notes.find(note => note.id === id)
+app.get('/api/notes/:id', (request, response, next) => {
+  const { id } = request.params
 
-  if (note) { response.json(note) }
-
-  response.status(404).end()
+  Note.findById(id).then(note => {
+    if (note) { response.json(note) }
+    response.status(404).end()
+  }).catch(err => {
+    next(err)
+  })
 })
 
-app.delete('/api/notes/:id', (request, response) => {
-  const id = Number(request.params.id)
-  notes = notes.filter(note => note.id !== id)
-  response.status(204).end()
+app.put('/api/notes/:id', (request, response, next) => {
+  const { id } = request.params
+  const note = request.body
+
+  const newNoteInfo = {
+    content: note.content,
+    important: note.important
+  }
+
+  Note.findByIdAndUpdate(id, newNoteInfo, { new: true }).then(note => {
+    response.json(note).end()
+  }).catch(err => {
+    next(err)
+  })
+})
+
+app.delete('/api/notes/:id', (request, response, next) => {
+  const { id } = request.params
+
+  Note.findByIdAndRemove(id).then(_res => {
+    response.status(204).end()
+  }).catch(err => {
+    next(err)
+  })
 })
 
 app.post('/api/notes', (request, response) => {
   const note = request.body
 
-  const noteIds = notes.map(note => note.id)
-  const maxId = Math.max(...noteIds)
-
-  const newNote = {
-    id: maxId + 1,
-    date: new Date().toISOString(),
-    important: note.important ?? false,
-    content: note.content
+  if (!note.content) {
+    return response.status(400).json({
+      error: 'required "content" field is missing'
+    })
   }
 
-  notes.push(newNote)
+  const newNote = new Note({
+    content: note.content,
+    date: new Date().toISOString(),
+    important: note.important ?? false
+  })
 
-  response.status(201).json(newNote)
-})
-
-app.use((request, response) => {
-  response.status(404).json({
-    error: 'Not found'
+  newNote.save().then(savedNote => {
+    response.json(savedNote)
   })
 })
 
-const PORT = 3001
+// -----------------------------------------------------------------
+// MIDDLEWARES
+// -----------------------------------------------------------------
+
+// 404 middleware
+app.use(notFound)
+
+// The error handler must be before any other error middleware and after all controllers
+app.use(Sentry.Handlers.errorHandler())
+
+// Fallback Error middleware
+app.use(handleErrors)
+
+const PORT = process.env.PORT || 3001
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`)
 })
