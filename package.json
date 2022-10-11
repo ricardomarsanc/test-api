@@ -7,8 +7,7 @@
     "dev": "cross-env NODE_ENV=development nodemon index.js",
     "start": "cross-env NODE_ENV=production node index.js",
     "lint": "npm run lint",
-    "test": "cross-env NODE_ENV=test jest --verbose --silent",
-    "test:log": "cross-env NODE_ENV=test jest --verbose",
+    "test": "cross-env NODE_ENV=test PORT=1234 jest --verbose --silent",
     "test:watch": "npm run test -- --watch"
   },
   "keywords": [],
@@ -25,10 +24,12 @@
   "dependencies": {
     "@sentry/node": "7.14.1",
     "@sentry/tracing": "7.14.1",
+    "bcrypt": "5.1.0",
     "cors": "2.8.5",
     "dotenv": "16.0.2",
     "express": "4.17.1",
-    "mongoose": "5.11.15"
+    "mongoose": "5.11.15",
+    "mongoose-unique-validator": "3.1.0"
   },
   "eslintConfig": {
     "extends": "./node_modules/standard/eslintrc.json",

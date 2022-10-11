@@ -9,6 +9,8 @@ const app = express()
 const cors = require('cors')
 const Note = require('./models/Note')
 
+const usersRouter = require('./controllers/users')
+
 const notFound = require('./middleware/notFound.js')
 const handleErrors = require('./middleware/handleError.js')
 
@@ -109,6 +111,8 @@ app.post('/api/notes', async (request, response, next) => {
     next(e)
   }
 })
+
+app.use('/api/users', usersRouter)
 
 // -----------------------------------------------------------------
 // MIDDLEWARES
