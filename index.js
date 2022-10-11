@@ -2,24 +2,19 @@ require('dotenv').config()
 // DB connection - Auto execute
 require('./mongo')
 
+const Sentry = require('@sentry/node')
+const Tracing = require('@sentry/tracing')
+const express = require('express')
+const app = express()
+const cors = require('cors')
+const Note = require('./models/Note')
+
 const notFound = require('./middleware/notFound.js')
 const handleErrors = require('./middleware/handleError.js')
 
-const Sentry = require('@sentry/node')
-const Tracing = require('@sentry/tracing')
-
-const express = require('express')
-const app = express()
-
-const cors = require('cors')
-
-const Note = require('./models/Note')
-
-const logger = require('./loggerMiddleware')
-
 app.use(cors())
 app.use(express.json())
-app.use(express.static('images'))
+app.use('/images', express.static('images'))
 
 Sentry.init({
   dsn: process.env.SENTRY_URI,
@@ -28,7 +23,8 @@ Sentry.init({
     new Sentry.Integrations.Http({ tracing: true }),
     // enable Express.js middleware tracing
     new Tracing.Integrations.Express({ app })
-  ]
+  ],
+  tracesSampleRate: 1.0
 })
 
 // RequestHandler creates a separate execution context using domains, so that every
@@ -37,16 +33,18 @@ app.use(Sentry.Handlers.requestHandler())
 // TracingHandler creates a trace for every incoming request
 app.use(Sentry.Handlers.tracingHandler())
 
-app.use(logger)
+// app.use(logger)
 
-app.get('/', (_request, response) => {
+app.get('/', (request, response) => {
+  console.log(request.ip)
+  console.log(request.ips)
+  console.log(request.orignalUrl)
   response.send('<h1>Hello World</h1>')
 })
 
-app.get('/api/notes', (_request, response) => {
-  Note.find({}).then(notes => {
-    response.json(notes)
-  })
+app.get('/api/notes', async (request, response) => {
+  const notes = await Note.find({})
+  response.json(notes)
 })
 
 app.get('/api/notes/:id', (request, response, next) => {
@@ -55,9 +53,7 @@ app.get('/api/notes/:id', (request, response, next) => {
   Note.findById(id).then(note => {
     if (note) { response.json(note) }
     response.status(404).end()
-  }).catch(err => {
-    next(err)
-  })
+  }).catch(err => next(err))
 })
 
 app.put('/api/notes/:id', (request, response, next) => {
@@ -69,41 +65,49 @@ app.put('/api/notes/:id', (request, response, next) => {
     important: note.important
   }
 
-  Note.findByIdAndUpdate(id, newNoteInfo, { new: true }).then(note => {
-    response.json(note).end()
-  }).catch(err => {
-    next(err)
-  })
+  Note.findByIdAndUpdate(id, newNoteInfo, { new: true })
+    .then(note => {
+      response.json(note)
+    })
+    .catch(next)
 })
 
-app.delete('/api/notes/:id', (request, response, next) => {
+app.delete('/api/notes/:id', async (request, response, next) => {
   const { id } = request.params
 
-  Note.findByIdAndRemove(id).then(_res => {
+  try {
+    const res = await Note.findByIdAndDelete(id)
+    if (res === null) return response.sendStatus(404)
     response.status(204).end()
-  }).catch(err => {
-    next(err)
-  })
+  } catch (e) {
+    next(e)
+  }
 })
 
-app.post('/api/notes', (request, response) => {
-  const note = request.body
+app.post('/api/notes', async (request, response, next) => {
+  const {
+    content,
+    important = false
+  } = request.body
 
-  if (!note.content) {
+  if (!content) {
     return response.status(400).json({
       error: 'required "content" field is missing'
     })
   }
 
   const newNote = new Note({
-    content: note.content,
+    content,
     date: new Date().toISOString(),
-    important: note.important ?? false
+    important
   })
 
-  newNote.save().then(savedNote => {
+  try {
+    const savedNote = await newNote.save()
     response.json(savedNote)
-  })
+  } catch (e) {
+    next(e)
+  }
 })
 
 // -----------------------------------------------------------------
@@ -120,6 +124,8 @@ app.use(Sentry.Handlers.errorHandler())
 app.use(handleErrors)
 
 const PORT = process.env.PORT || 3001
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`)
 })
+
+module.exports = { app, server }
