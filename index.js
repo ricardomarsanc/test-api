@@ -13,6 +13,7 @@ const usersRouter = require('./controllers/users')
 
 const notFound = require('./middleware/notFound.js')
 const handleErrors = require('./middleware/handleError.js')
+const User = require('./models/User')
 
 app.use(cors())
 app.use(express.json())
@@ -45,7 +46,9 @@ app.get('/', (request, response) => {
 })
 
 app.get('/api/notes', async (request, response) => {
-  const notes = await Note.find({})
+  const notes = await Note.find({}).populate('user', {
+    username: 1
+  })
   response.json(notes)
 })
 
@@ -89,8 +92,11 @@ app.delete('/api/notes/:id', async (request, response, next) => {
 app.post('/api/notes', async (request, response, next) => {
   const {
     content,
-    important = false
+    important = false,
+    userId
   } = request.body
+
+  const user = await User.findById(userId)
 
   if (!content) {
     return response.status(400).json({
@@ -101,11 +107,16 @@ app.post('/api/notes', async (request, response, next) => {
   const newNote = new Note({
     content,
     date: new Date().toISOString(),
-    important
+    important,
+    user: user._id
   })
 
   try {
     const savedNote = await newNote.save()
+    // Add the new note to the user note list
+    user.notes = user.notes.concat(savedNote._id)
+    await user.save()
+
     response.json(savedNote)
   } catch (e) {
     next(e)
