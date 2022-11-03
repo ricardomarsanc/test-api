@@ -8,8 +8,9 @@ const express = require('express')
 const app = express()
 const cors = require('cors')
 
-const usersRouter = require('./controllers/users')
+const loginRouter = require('./controllers/login')
 const notesRouter = require('./controllers/notes')
+const usersRouter = require('./controllers/users')
 
 const notFound = require('./middleware/notFound.js')
 const handleErrors = require('./middleware/handleError.js')
@@ -42,7 +43,12 @@ app.get('/', (request, response) => {
   response.send('<h1>Hello World</h1>')
 })
 
+// -----------------------------------------------------------------
+// CONTROLLERS
+// -----------------------------------------------------------------
+
 app.use('/api/notes', notesRouter)
+app.use('/api/login', loginRouter)
 app.use('/api/users', usersRouter)
 
 // -----------------------------------------------------------------
